@@ -1,17 +1,18 @@
 package com.example.unbreakableleashes;
 
+import io.papermc.paper.entity.Leashable;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
-import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityUnleashEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.event.player.PlayerInteractEntityEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
@@ -38,64 +39,69 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
     }
 
     @EventHandler(priority = EventPriority.HIGHEST)
-    public void onPlayerRightClickEntity(PlayerInteractEntityEvent event) {
-        if (event.getHand() != EquipmentSlot.HAND) {
-            return;
-        }
-
-        Player player = event.getPlayer();
-        // Only unleash when Shift + Right-Clicking
-        if (!player.isSneaking()) {
-            return;
-        }
-
-        Entity clicked = event.getRightClicked();
-
-        if (clicked instanceof Boat boat) {
-            boolean unleashedAny = false;
-            for (Entity passenger : boat.getPassengers()) {
-                if (passenger instanceof LivingEntity living && living.isLeashed() && living.getLeashHolder().equals(player)) {
-                    living.setLeashHolder(null);
-                    boat.getWorld().dropItemNaturally(boat.getLocation(), new ItemStack(Material.LEAD));
-                    unleashedAny = true;
-                }
-            }
-            if (unleashedAny) {
-                event.setCancelled(true);
-            }
-        } else if (clicked instanceof LivingEntity living && living.isLeashed() && living.getLeashHolder().equals(player)) {
-            living.setLeashHolder(null);
-            living.getWorld().dropItemNaturally(living.getLocation(), new ItemStack(Material.LEAD));
+    public void onPlayerInteractEntity(PlayerInteractEntityEvent event) {
+        if (handleSneakUnleash(event.getPlayer(), event.getRightClicked(), event.getHand())) {
             event.setCancelled(true);
         }
     }
 
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void onPlayerInteractAtEntity(PlayerInteractAtEntityEvent event) {
+        if (handleSneakUnleash(event.getPlayer(), event.getRightClicked(), event.getHand())) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean handleSneakUnleash(Player player, Entity clicked, EquipmentSlot hand) {
+        if (hand != EquipmentSlot.HAND || !player.isSneaking()) {
+            return false;
+        }
+
+        boolean unleashed = false;
+
+        // 1. Check if the clicked entity itself (e.g., Boat or Mob) is directly leashed to the player
+        if (clicked instanceof Leashable leashable && leashable.isLeashed() && player.equals(leashable.getLeashHolder())) {
+            leashable.setLeashHolder(null);
+            clicked.getWorld().dropItemNaturally(clicked.getLocation(), new ItemStack(Material.LEAD));
+            unleashed = true;
+        }
+
+        // 2. Also check if the clicked entity is a Boat carrying a leashed passenger
+        if (clicked instanceof Boat boat) {
+            for (Entity passenger : boat.getPassengers()) {
+                if (passenger instanceof Leashable leashable && leashable.isLeashed() && player.equals(leashable.getLeashHolder())) {
+                    leashable.setLeashHolder(null);
+                    boat.getWorld().dropItemNaturally(boat.getLocation(), new ItemStack(Material.LEAD));
+                    unleashed = true;
+                }
+            }
+        }
+
+        return unleashed;
+    }
+
     private void tickLeashedEntities() {
         for (World world : Bukkit.getWorlds()) {
-            for (LivingEntity entity : world.getLivingEntities()) {
-                if (!entity.isLeashed()) {
+            for (Entity entity : world.getEntities()) {
+                if (!(entity instanceof Leashable leashable) || !leashable.isLeashed()) {
                     continue;
                 }
 
-                Entity holder = entity.getLeashHolder();
+                Entity holder = leashable.getLeashHolder();
                 if (holder == null) {
                     continue;
                 }
 
-                if (!entity.getWorld().equals(holder.getWorld())) {
-                    entity.teleport(holder.getLocation());
+                // If a passenger is leashed, pull its boat; if the boat itself is leashed, pull the boat directly
+                Entity targetEntity = entity.isInsideVehicle() && entity.getVehicle() instanceof Boat ? entity.getVehicle() : entity;
+
+                if (!targetEntity.getWorld().equals(holder.getWorld())) {
+                    targetEntity.teleport(holder.getLocation());
                     continue;
                 }
-
-                Entity targetEntity = entity.isInsideVehicle() && entity.getVehicle() instanceof Boat ? entity.getVehicle() : entity;
 
                 Location targetLoc = targetEntity.getLocation();
                 Location holderLoc = holder.getLocation();
-                
-                if (!targetLoc.getWorld().equals(holderLoc.getWorld())) {
-                    continue;
-                }
-
                 double distance = targetLoc.distance(holderLoc);
 
                 if (distance > TELEPORT_DISTANCE) {
