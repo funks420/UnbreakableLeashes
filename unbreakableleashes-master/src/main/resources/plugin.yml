@@ -1,0 +1,5 @@
+name: UnbreakableLeashes
+version: 2.0.0
+main: com.example.unbreakableleashes.UnbreakableLeashesPlugin
+api-version: '26.3'
+description: Prevents leads from snapping due to distance or high-speed movement.
