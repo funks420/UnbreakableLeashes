@@ -3,6 +3,7 @@ package com.example.unbreakableleashes;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.entity.Boat;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.event.EventHandler;
@@ -14,24 +15,25 @@ import org.bukkit.util.Vector;
 
 public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
 
-    // Max distance before elastic pull kicks in
     private static final double PULL_START_DISTANCE = 8.0;
-    // Distance at which the entity is teleported directly to the holder (e.g., fast elytra flight)
     private static final double TELEPORT_DISTANCE = 45.0;
 
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-
-        // Run every 2 ticks (0.1 seconds) to keep leashed entities pulled smoothly
-        Bukkit.getScheduler().runTaskTimer(this, this::tickLeashedEntities, 1L, 2L);
+        // Run every tick to instantly catch high-speed movement like elytra flight with boats
+        Bukkit.getScheduler().runTaskTimer(this, this::tickLeashedEntities, 1L, 1L);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityUnleash(EntityUnleashEvent event) {
-        // Only cancel if the lead snapped due to distance
-        if (event.getReason() == EntityUnleashEvent.UnleashReason.DISTANCE) {
-            event.setCancelled(true);
+        if (event.getReason() == EntityUnleashEvent.UnleashReason.DISTANCE || 
+            event.getReason() == EntityUnleashEvent.UnleashReason.PLAYER_UNLEASH) {
+            // Keep leashed unless explicitly un-leashed by right-clicking with shears/lead
+            // For distance snapping, always cancel it
+            if (event.getReason() == EntityUnleashEvent.UnleashReason.DISTANCE) {
+                event.setCancelled(true);
+            }
         }
     }
 
@@ -43,30 +45,34 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                 }
 
                 Entity holder = entity.getLeashHolder();
+                if (holder == null) {
+                    continue;
+                }
 
-                // Handle cross-dimension teleports (e.g., player goes through a Nether portal)
+                // Handle cross-dimension tracking
                 if (!entity.getWorld().equals(holder.getWorld())) {
                     entity.teleport(holder.getLocation());
                     continue;
                 }
 
-                Location entityLoc = entity.getLocation();
+                // If the entity is riding a boat (like a chicken in a boat), target the boat for physics/pulling
+                Entity targetEntity = entity.isInsideVehicle() && entity.getVehicle() instanceof Boat ? entity.getVehicle() : entity;
+
+                Location targetLoc = targetEntity.getLocation();
                 Location holderLoc = holder.getLocation();
-                double distance = entityLoc.distance(holderLoc);
+                double distance = targetLoc.distance(holderLoc);
 
                 if (distance > TELEPORT_DISTANCE) {
-                    entity.teleport(holderLoc);
+                    targetEntity.teleport(holderLoc);
                 } else if (distance > PULL_START_DISTANCE) {
-                    // Calculate normalized direction vector toward the leash holder
-                    Vector direction = holderLoc.toVector().subtract(entityLoc.toVector()).normalize();
-                    double pullStrength = Math.min((distance - PULL_START_DISTANCE) * 0.15, 1.5);
+                    Vector direction = holderLoc.toVector().subtract(targetLoc.toVector()).normalize();
+                    double pullStrength = Math.min((distance - PULL_START_DISTANCE) * 0.2, 2.0);
                     
                     Vector velocity = direction.multiply(pullStrength);
-                    // Add a slight upward boost so mobs don't get stuck on 1-block ledges
-                    velocity.setY(Math.max(velocity.getY(), 0.25));
+                    velocity.setY(Math.max(velocity.getY(), 0.3));
                     
-                    entity.setVelocity(velocity);
-                    entity.setFallDistance(0f); // Prevent fall damage while being dragged
+                    targetEntity.setVelocity(velocity);
+                    targetEntity.setFallDistance(0f);
                 }
             }
         }
