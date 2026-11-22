@@ -15,26 +15,20 @@ import org.bukkit.util.Vector;
 
 public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
 
-    // Widened threshold so sharp turns don't instantly trigger distance snaps
     private static final double PULL_START_DISTANCE = 6.0;
     private static final double TELEPORT_DISTANCE = 35.0;
 
     @Override
     public void onEnable() {
         getServer().getPluginManager().registerEvents(this, this);
-        // Run every single tick for ultra-responsive high-speed tracking
         Bukkit.getScheduler().runTaskTimer(this, this::tickLeashedEntities, 1L, 1L);
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onEntityUnleash(EntityUnleashEvent event) {
-        // Cancel lead breaks triggered by distance or firework player movement actions
         if (event.getReason() == EntityUnleashEvent.UnleashReason.DISTANCE || 
             event.getReason() == EntityUnleashEvent.UnleashReason.PLAYER_UNLEASH) {
             event.setCancelled(true);
-        }
-    }
-            }
         }
     }
 
@@ -50,7 +44,6 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
 
-                // Handle cross-dimension tracking
                 if (!entity.getWorld().equals(holder.getWorld())) {
                     entity.teleport(holder.getLocation());
                     continue;
@@ -61,7 +54,6 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                 Location targetLoc = targetEntity.getLocation();
                 Location holderLoc = holder.getLocation();
                 
-                // If worlds match but distance check fails unexpectedly, ensure same dimension check
                 if (!targetLoc.getWorld().equals(holderLoc.getWorld())) {
                     continue;
                 }
@@ -69,11 +61,9 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                 double distance = targetLoc.distance(holderLoc);
 
                 if (distance > TELEPORT_DISTANCE) {
-                    // Instant catch-up for sharp whip turns that stretch the lead past safe limits
                     targetEntity.teleport(holderLoc);
                     targetEntity.setVelocity(new Vector(0, 0, 0));
                 } else if (distance > PULL_START_DISTANCE) {
-                    // Aggressive velocity multiplier during sharp turns to counteract centrifugal lag
                     Vector direction = holderLoc.toVector().subtract(targetLoc.toVector()).normalize();
                     double pullStrength = Math.min((distance - PULL_START_DISTANCE) * 0.35, 3.5);
                     
