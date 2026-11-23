@@ -59,14 +59,12 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
 
         boolean unleashed = false;
 
-        // 1. Check if the clicked entity itself (e.g., Boat or Mob) is directly leashed to the player
         if (clicked instanceof Leashable leashable && leashable.isLeashed() && player.equals(leashable.getLeashHolder())) {
             leashable.setLeashHolder(null);
             clicked.getWorld().dropItemNaturally(clicked.getLocation(), new ItemStack(Material.LEAD));
             unleashed = true;
         }
 
-        // 2. Also check if the clicked entity is a Boat carrying a leashed passenger
         if (clicked instanceof Boat boat) {
             for (Entity passenger : boat.getPassengers()) {
                 if (passenger instanceof Leashable leashable && leashable.isLeashed() && player.equals(leashable.getLeashHolder())) {
@@ -92,7 +90,6 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                     continue;
                 }
 
-                // If a passenger is leashed, pull its boat; if the boat itself is leashed, pull the boat directly
                 Entity targetEntity = entity.isInsideVehicle() && entity.getVehicle() instanceof Boat ? entity.getVehicle() : entity;
 
                 if (!targetEntity.getWorld().equals(holder.getWorld())) {
@@ -109,10 +106,11 @@ public class UnbreakableLeashesPlugin extends JavaPlugin implements Listener {
                     targetEntity.setVelocity(new Vector(0, 0, 0));
                 } else if (distance > PULL_START_DISTANCE) {
                     Vector direction = holderLoc.toVector().subtract(targetLoc.toVector()).normalize();
-                    double pullStrength = Math.min((distance - PULL_START_DISTANCE) * 0.35, 3.5);
+                    double pullStrength = Math.min((distance - PULL_START_DISTANCE) * 0.25, 2.0);
                     
                     Vector velocity = direction.multiply(pullStrength);
-                    velocity.setY(Math.max(velocity.getY(), 0.35));
+                    // Clamp vertical velocity so boats don't launch into space
+                    velocity.setY(Math.max(-0.4, Math.min(velocity.getY(), 0.4)));
                     
                     targetEntity.setVelocity(velocity);
                     targetEntity.setFallDistance(0f);
